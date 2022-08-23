@@ -10,6 +10,7 @@ import (
 
 // global variables
 var err string
+var myClock int = 1                         // clock
 var sharedResourcePort string = ":10001" // shared resource port
 var myPort string                        // my server port
 var myId string                          // my process id
@@ -70,6 +71,7 @@ func beClientOfSharedResource() {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Enter a message: ")
 		msg, err := reader.ReadString('\n')
+		msg = msg + " [from ID: " + myId + "; CLOCK: " + strconv.Itoa(myClock) + "]"
 		CheckError(err)
 
 		// sending the typed message to 'server'
