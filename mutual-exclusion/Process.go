@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // global variables
@@ -24,6 +25,7 @@ var nServers int                         // number of other process servers + sh
 var myState int = RELEASED               // state of process
 var ClientConn []*net.UDPConn            // array of connections with processes
 var ServerConn *net.UDPConn              // shared Resource connection
+var repliesCounter int = 0               // if repliesCounter is equal to nProcess -1 so process held the CS
 
 func CheckError(err error) {
 	if err != nil {
@@ -49,24 +51,33 @@ func doServerJob() {
 	buf := make([]byte, 1024)
 
 	for {
-		n, addr, err := ServerConn.ReadFromUDP(buf)
-		msg := string(buf[0:n])
-		fmt.Println("Received ", msg, " from ", addr)
+		n, _, err := ServerConn.ReadFromUDP(buf)
+		entireMessage := string(buf[0:n])
+		entireMessage = strings.Trim(entireMessage, "\n")
+		msg := strings.Split(entireMessage, ",")[0]
+		id := strings.Split(entireMessage, ":")[1]
+		fmt.Println("Received ", msg, " from ID=", id)
 
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
 
-		if msg == "x\n" {
+		if msg == "x" {
+
+			intId, _ := strconv.Atoi(id)
+			isReceiving := true
+			ricartAgrawala("", isReceiving, intId)
+
+		} else if msg == "OK" {
 
 			isReceiving := true
-			ricartAgrawala(msg, isReceiving, 1)
+			ricartAgrawala("", isReceiving, 0)
 
 		}
 	}
 }
 
-func sendMessageToOtherProcesses(processId int, msg string) {
+func sendMessageToAnotherServer(processId int, msg string) {
 
 	buf := []byte(msg)
 	_, err := ClientConn[processId].Write(buf)
@@ -84,35 +95,27 @@ func doClientJob() {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Enter a message: ")
 		msg, err := reader.ReadString('\n')
+		msg = strings.Trim(msg, "\n");
 		CheckError(err)
 
-		if msg == "x\n" {
+		if msg == "x" {
 
 			if didProcessAlreadyRequestCS() == false {
 				myState = WANTED
 				isReceiving := false // because is sending
 				myIntId, _ := strconv.Atoi(myId)
-				ricartAgrawala(msg, isReceiving, myIntId)
+				ricartAgrawala(msg + ",ID:" + myId, isReceiving, myIntId)
 			} else {
 				fmt.Println("x ignorado")
 			}
 
-		} else if msg == myId + "\n" {
+		} else if msg == myId {
 
 			incrementClock()
 
 		} else {
 
-			msg = msg + " [from ID: " + myId + "; CLOCK: " + strconv.Itoa(myClock) + "]"
-	
-			// sending the typed message to Shared Resource
-			buf := []byte(msg)
-			_, err = ClientConn[nServers-1].Write(buf)
-			CheckError(err)
-	
-			if err != nil {
-				fmt.Println(msg, err)
-			}
+			sendMessageToSharedResource(msg)
 
 		}
 
@@ -125,19 +128,34 @@ func ricartAgrawala(msg string, isReceiving bool, processId int) {
 	if isReceiving == true {
 
 		if myState == RELEASED {
-			sendMessageToOtherProcesses(processId-1, "pode entrar")
+
+			sendMessageToAnotherServer(processId-1, "OK" + ",ID:" + myId)
+
+		} else if myState == WANTED {
+
+			repliesCounter = repliesCounter + 1
+			if repliesCounter == 2 {
+				repliesCounter = 0
+				myState = HELD
+				sendMessageToSharedResource("Entrei na CS")
+			}
+
 		}
 
 	} else {
 		// sending messages to other processes to request CS
 		for j := 0; j < nServers-1; j++ {
 			if strconv.Itoa(j+1) != myId {
-				sendMessageToOtherProcesses(j, msg)
+				sendMessageToAnotherServer(j, msg)
 			}
 		}
 
 	}
 
+}
+
+func sendMessageToSharedResource(msg string) {
+	sendMessageToAnotherServer(nServers-1, msg + " [from ID: " + myId + "; CLOCK: " + strconv.Itoa(myClock) + "]")
 }
 
 func initConnections() {
