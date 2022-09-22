@@ -7,3 +7,8 @@ passo 2: executar os processos e o SharedResource
     $ ./Process 2 :10002 :10003 :10004
     $ ./Process 3 :10002 :10003 :10004
     $ ./SharedResource
+
+
+
+
+util: export PATH=$PATH:/usr/local/go/bin

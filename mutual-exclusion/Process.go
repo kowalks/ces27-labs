@@ -9,13 +9,19 @@ import (
 )
 
 // global variables
+const (
+	RELEASED = 0
+	WANTED   = 1
+	HELD     = 2
+)
 var err string
-var myClock int = 1                         // clock
+var myClock int = 1                      // clock
 var sharedResourcePort string = ":10001" // shared resource port
 var myPort string                        // my server port
 var myId string                          // my process id
 var nProcess int                         // number of other process servers
 var nServers int                         // number of other process servers + shared resource server
+var myState int = RELEASED               // state of process
 var ClientConn []*net.UDPConn            // array of connections with processes
 var ServerConn *net.UDPConn              // shared Resource connection
 
@@ -26,71 +32,123 @@ func CheckError(err error) {
 	}
 }
 
+func incrementClock() {
+	myClock = myClock + 1
+}
+
+func didProcessAlreadyRequestCS() bool {
+	if myState != RELEASED {
+		return true
+	}
+
+	return false
+}
+
 func doServerJob() {
 
 	buf := make([]byte, 1024)
 
 	for {
 		n, addr, err := ServerConn.ReadFromUDP(buf)
-		fmt.Println("Received ", string(buf[0:n]), " from ", addr)
+		msg := string(buf[0:n])
+		fmt.Println("Received ", msg, " from ", addr)
 
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
-		//Loop infinito para receber mensagem e escrever todo
-		//conteúdo (processo que enviou, relógio recebido e texto)
-		//na tela
-		//FALTA FAZER
+
+		if msg == "x\n" {
+
+			isReceiving := true
+			ricartAgrawala(msg, isReceiving, 1)
+
+		}
 	}
 }
 
-func doClientJob(server int) {
-	// for {
+func sendMessageToOtherProcesses(processId int, msg string) {
 
-	// 	// reading from keyboard
-	// 	reader := bufio.NewReader(os.Stdin)
-	// 	fmt.Print("Enter a message: ")
-	// 	msg, err := reader.ReadString('\n')
-	// 	CheckError(err)
+	buf := []byte(msg)
+	_, err := ClientConn[processId].Write(buf)
+	CheckError(err)
 
-	// 	// sending the typed message to 'server'
-	// 	buf := []byte(msg)
-	// 	_, err = ClientConn[server].Write(buf)
-	// 	CheckError(err)
-
-	// 	if err != nil {
-	// 		fmt.Println(msg, err)
-	// 	}
-	// }
+	if err != nil {
+		fmt.Println(msg, err)
+	}
 }
 
-func beClientOfSharedResource() {
+func doClientJob() {
 	for {
 
 		// reading from keyboard
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Enter a message: ")
 		msg, err := reader.ReadString('\n')
-		msg = msg + " [from ID: " + myId + "; CLOCK: " + strconv.Itoa(myClock) + "]"
 		CheckError(err)
 
-		// sending the typed message to 'server'
-		buf := []byte(msg)
-		_, err = ClientConn[nServers-1].Write(buf)
-		CheckError(err)
+		if msg == "x\n" {
 
-		if err != nil {
-			fmt.Println(msg, err)
+			if didProcessAlreadyRequestCS() == false {
+				myState = WANTED
+				isReceiving := false // because is sending
+				myIntId, _ := strconv.Atoi(myId)
+				ricartAgrawala(msg, isReceiving, myIntId)
+			} else {
+				fmt.Println("x ignorado")
+			}
+
+		} else if msg == myId + "\n" {
+
+			incrementClock()
+
+		} else {
+
+			msg = msg + " [from ID: " + myId + "; CLOCK: " + strconv.Itoa(myClock) + "]"
+	
+			// sending the typed message to Shared Resource
+			buf := []byte(msg)
+			_, err = ClientConn[nServers-1].Write(buf)
+			CheckError(err)
+	
+			if err != nil {
+				fmt.Println(msg, err)
+			}
+
 		}
+
 	}
+}
+
+func ricartAgrawala(msg string, isReceiving bool, processId int) {
+
+
+	if isReceiving == true {
+
+		if myState == RELEASED {
+			sendMessageToOtherProcesses(processId-1, "pode entrar")
+		}
+
+	} else {
+		// sending messages to other processes to request CS
+		for j := 0; j < nServers-1; j++ {
+			if strconv.Itoa(j+1) != myId {
+				sendMessageToOtherProcesses(j, msg)
+			}
+		}
+
+	}
+
 }
 
 func initConnections() {
 
 	// STARTING CONNECTIONS WITH OTHER PROCESSES
 
-	// getting the second argument (id) from './Process $id :myport :otherport :otherport :otherport ...'
+	// getting the second argument (id) from './Process $id :port :port :port ...'
 	myId = os.Args[1]
+
+	// port indexes offset
+	offset := 2
 
 	// getting the process port
 	myIntId, err := strconv.Atoi(myId)
@@ -98,7 +156,7 @@ func initConnections() {
 	portPosition := myIntId + 1
 	myPort = os.Args[portPosition]
 
-	nProcess = len(os.Args) - 3
+	nProcess = len(os.Args) - offset
 	nServers = nProcess + 1
 	ClientConn = make([]*net.UDPConn, nServers)
 
@@ -109,7 +167,9 @@ func initConnections() {
 
 	for processServer := 0; processServer < nProcess; processServer++ {
 
-		ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+os.Args[3+processServer])
+		//fmt.Println("add: ", "127.0.0.1"+os.Args[offset+processServer])
+
+		ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+os.Args[offset+processServer])
 		CheckError(err)
 
 		Conn, err := net.DialUDP("udp", nil, ServerAddr)
@@ -139,13 +199,8 @@ func main() {
 	// listening messages from other processes
 	go doServerJob()
 
-	for j := 0; j < nServers-1; j++ {
-		// sending messages to other processes
-		go doClientJob(j)
-	}
-
-	// sending messages shared resource
-	go beClientOfSharedResource()
+	// sending message to another process and to SharedResource
+	go doClientJob()
 
 	// infinite loop
 	for {
