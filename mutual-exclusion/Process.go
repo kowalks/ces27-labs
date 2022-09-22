@@ -26,6 +26,8 @@ var myState int = RELEASED               // state of process
 var ClientConn []*net.UDPConn            // array of connections with processes
 var ServerConn *net.UDPConn              // shared Resource connection
 var repliesCounter int = 0               // if repliesCounter is equal to nProcess -1 so process held the CS
+var queueId []int                        // queue of ids that wait to CS
+var queueTime []int                      // queue of clock of ids that wait to CS
 
 func CheckError(err error) {
 	if err != nil {
@@ -55,7 +57,8 @@ func doServerJob() {
 		entireMessage := string(buf[0:n])
 		entireMessage = strings.Trim(entireMessage, "\n")
 		msg := strings.Split(entireMessage, ",")[0]
-		id := strings.Split(entireMessage, ":")[1]
+		id := strings.Split(strings.Split(entireMessage, ":")[1], ",")[0]
+		clock := strings.Split(entireMessage, ":")[2]
 		fmt.Println("Received ", msg, " from ID=", id)
 
 		if err != nil {
@@ -65,13 +68,16 @@ func doServerJob() {
 		if msg == "x" {
 
 			intId, _ := strconv.Atoi(id)
+			intClock, _ := strconv.Atoi(clock)
 			isReceiving := true
-			ricartAgrawala("", isReceiving, intId)
+			ricartAgrawala("", isReceiving, intId, intClock)
 
 		} else if msg == "OK" {
 
+			intId, _ := strconv.Atoi(id)       // will be not used
+			intClock, _ := strconv.Atoi(clock) // will be not used
 			isReceiving := true
-			ricartAgrawala("", isReceiving, 0)
+			ricartAgrawala("", isReceiving, intId, intClock)
 
 		}
 	}
@@ -104,7 +110,7 @@ func doClientJob() {
 				myState = WANTED
 				isReceiving := false // because is sending
 				myIntId, _ := strconv.Atoi(myId)
-				ricartAgrawala(msg + ",ID:" + myId, isReceiving, myIntId)
+				ricartAgrawala(msg + ",ID:" + myId + ",CLOCK:" + strconv.Itoa(myClock), isReceiving, myIntId, myClock)
 			} else {
 				fmt.Println("x ignorado")
 			}
@@ -122,16 +128,16 @@ func doClientJob() {
 	}
 }
 
-func ricartAgrawala(msg string, isReceiving bool, processId int) {
+func ricartAgrawala(msg string, isReceiving bool, processId int, processClock int) {
 
 
 	if isReceiving == true {
 
 		if myState == RELEASED {
 
-			sendMessageToAnotherServer(processId-1, "OK" + ",ID:" + myId)
+			sendMessageToAnotherServer(processId-1, "OK" + ",ID:" + myId + ",CLOCK:" + strconv.Itoa(myClock))
 
-		} else if myState == WANTED {
+		} else if myState == WANTED { // waiting for "OK"
 
 			repliesCounter = repliesCounter + 1
 			if repliesCounter == 2 {
@@ -140,6 +146,9 @@ func ricartAgrawala(msg string, isReceiving bool, processId int) {
 				sendMessageToSharedResource("Entrei na CS")
 			}
 
+		} else if myState == HELD {
+			// queueId = append(queueId, processId)
+			// queueTime = append(queueTime, processClock)
 		}
 
 	} else {
