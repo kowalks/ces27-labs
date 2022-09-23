@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // global variables
@@ -28,6 +30,7 @@ var ServerConn *net.UDPConn              // shared Resource connection
 var repliesCounter int = 0               // if repliesCounter is equal to nProcess -1 so process held the CS
 var queueId []int                        // queue of ids that wait to CS
 var queueTime []int                      // queue of clock of ids that wait to CS
+var mutex sync.Mutex                     // mutex
 
 func CheckError(err error) {
 	if err != nil {
@@ -37,7 +40,23 @@ func CheckError(err error) {
 }
 
 func incrementClock() {
+
+	mutex.Lock()
 	myClock = myClock + 1
+	mutex.Unlock()
+}
+
+func checkClocksAndIncrement(clock1 int, clock2 int) {
+
+	mutex.Lock()
+
+	if clock1 > clock2 {
+		myClock = clock1 + 1
+	} else {
+		myClock = clock2 + 1
+	}
+
+	mutex.Unlock()
 }
 
 func didProcessAlreadyRequestCS() bool {
@@ -46,6 +65,32 @@ func didProcessAlreadyRequestCS() bool {
 	}
 
 	return false
+}
+
+func enterOnCS() {
+	sendMessageToSharedResource("Entrei na CS")
+
+	// sleeping and wake up after 10 seconds
+	time.Sleep(10 * time.Second)
+
+	myState = RELEASED
+	
+	sendMessageToSharedResource("Saí da CS")
+
+	// send message to process in queue
+	queueLength := len(queueId)
+	for p := 0; p < queueLength; p++ {
+		id := queueId[p] - 1
+		//clock := queueTime[p]
+		sendMessageToAnotherServer(id, "OK" + ",ID:" + myId + ",CLOCK:" + strconv.Itoa(myClock))
+	}
+
+	// clean arrays
+	queueId = []int{}
+	queueTime = []int{}
+
+	incrementClock()
+
 }
 
 func doServerJob() {
@@ -59,7 +104,7 @@ func doServerJob() {
 		msg := strings.Split(entireMessage, ",")[0]
 		id := strings.Split(strings.Split(entireMessage, ":")[1], ",")[0]
 		clock := strings.Split(entireMessage, ":")[2]
-		fmt.Println("Received ", msg, " from ID=", id)
+		fmt.Println("\nReceived ", msg, " from ID=", id)
 
 		if err != nil {
 			fmt.Println("Error: ", err)
@@ -69,15 +114,21 @@ func doServerJob() {
 
 			intId, _ := strconv.Atoi(id)
 			intClock, _ := strconv.Atoi(clock)
+
+			checkClocksAndIncrement(myClock, intClock)
+
 			isReceiving := true
-			ricartAgrawala("", isReceiving, intId, intClock)
+			ricartAgrawala(msg, isReceiving, intId, intClock)
 
 		} else if msg == "OK" {
 
 			intId, _ := strconv.Atoi(id)       // will be not used
-			intClock, _ := strconv.Atoi(clock) // will be not used
+			intClock, _ := strconv.Atoi(clock)
+
+			checkClocksAndIncrement(myClock, intClock)
+
 			isReceiving := true
-			ricartAgrawala("", isReceiving, intId, intClock)
+			ricartAgrawala(msg, isReceiving, intId, intClock)
 
 		}
 	}
@@ -92,6 +143,7 @@ func sendMessageToAnotherServer(processId int, msg string) {
 	if err != nil {
 		fmt.Println(msg, err)
 	}
+
 }
 
 func doClientJob() {
@@ -105,6 +157,8 @@ func doClientJob() {
 		CheckError(err)
 
 		if msg == "x" {
+
+			incrementClock()
 
 			if didProcessAlreadyRequestCS() == false {
 				myState = WANTED
@@ -122,6 +176,7 @@ func doClientJob() {
 		} else {
 
 			sendMessageToSharedResource(msg)
+			incrementClock()
 
 		}
 
@@ -130,29 +185,44 @@ func doClientJob() {
 
 func ricartAgrawala(msg string, isReceiving bool, processId int, processClock int) {
 
-
-	if isReceiving == true {
+	if isReceiving == true { // receiving message from another process
 
 		if myState == RELEASED {
 
 			sendMessageToAnotherServer(processId-1, "OK" + ",ID:" + myId + ",CLOCK:" + strconv.Itoa(myClock))
 
-		} else if myState == WANTED { // waiting for "OK"
+		} else if myState == WANTED && msg == "x" {
+
+			if myClock > processClock {
+
+				queueId = append(queueId, processId)
+				queueTime = append(queueTime, processClock)
+
+			} else {
+
+				sendMessageToAnotherServer(processId-1, "OK" + ",ID:" + myId + ",CLOCK:" + strconv.Itoa(myClock))
+
+			}
+
+
+		} else if myState == WANTED && msg == "OK" {
 
 			repliesCounter = repliesCounter + 1
 			if repliesCounter == 2 {
 				repliesCounter = 0
 				myState = HELD
-				sendMessageToSharedResource("Entrei na CS")
+				go enterOnCS()
 			}
 
 		} else if myState == HELD {
-			// queueId = append(queueId, processId)
-			// queueTime = append(queueTime, processClock)
+
+			queueId = append(queueId, processId)
+			queueTime = append(queueTime, processClock)
+
 		}
 
-	} else {
-		// sending messages to other processes to request CS
+	} else { // sending messages to other processes to request CS
+		
 		for j := 0; j < nServers-1; j++ {
 			if strconv.Itoa(j+1) != myId {
 				sendMessageToAnotherServer(j, msg)
