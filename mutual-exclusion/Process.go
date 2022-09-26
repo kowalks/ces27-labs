@@ -18,7 +18,7 @@ const (
 	HELD     = 2
 )
 var err string
-var myClock int = 1                      // clock
+var myClock int = 0                      // clock
 var sharedResourcePort string = ":10001" // shared resource port
 var myPort string                        // my server port
 var myId string                          // my process id
@@ -40,14 +40,13 @@ func CheckError(err error) {
 }
 
 func incrementClock() {
-
 	mutex.Lock()
 	myClock = myClock + 1
+	fmt.Println("  clock:", myClock)
 	mutex.Unlock()
 }
 
 func checkClocksAndIncrement(clock1 int, clock2 int) {
-
 	mutex.Lock()
 
 	if clock1 > clock2 {
@@ -55,6 +54,7 @@ func checkClocksAndIncrement(clock1 int, clock2 int) {
 	} else {
 		myClock = clock2 + 1
 	}
+	fmt.Println("  clock:", myClock)
 
 	mutex.Unlock()
 }
@@ -68,6 +68,7 @@ func didProcessAlreadyRequestCS() bool {
 }
 
 func enterOnCS() {
+	fmt.Println("\nEntering the CS...")
 	sendMessageToSharedResource("Entrei na CS")
 
 	// sleeping and wake up after 10 seconds
@@ -76,6 +77,7 @@ func enterOnCS() {
 	myState = RELEASED
 	
 	sendMessageToSharedResource("Saí da CS")
+	fmt.Println("\nExiting the CS...")
 
 	// send message to process in queue
 	queueLength := len(queueId)
@@ -90,7 +92,6 @@ func enterOnCS() {
 	queueTime = []int{}
 
 	incrementClock()
-
 }
 
 func doServerJob() {
@@ -104,13 +105,15 @@ func doServerJob() {
 		msg := strings.Split(entireMessage, ",")[0]
 		id := strings.Split(strings.Split(entireMessage, ":")[1], ",")[0]
 		clock := strings.Split(entireMessage, ":")[2]
-		fmt.Println("\nReceived ", msg, " from ID=", id)
+		fmt.Println("\n\nReceived", msg, "[from ID: " + id + "; CLOCK: " + clock + "]")
 
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
 
 		if msg == "x" {
+
+			// time.Sleep(5 * time.Second)
 
 			intId, _ := strconv.Atoi(id)
 			intClock, _ := strconv.Atoi(clock)
@@ -160,6 +163,8 @@ func doClientJob() {
 
 			incrementClock()
 
+			// time.Sleep(5 * time.Second)
+
 			if didProcessAlreadyRequestCS() == false {
 				myState = WANTED
 				isReceiving := false // because is sending
@@ -193,8 +198,10 @@ func ricartAgrawala(msg string, isReceiving bool, processId int, processClock in
 
 		} else if myState == WANTED && msg == "x" {
 
-			if myClock > processClock {
+			myIntId, _ := strconv.Atoi(myId)
 
+			if myClock > processClock && myIntId < processId {
+				// fmt.Println("*** current clock", myClock, "msg clock", processClock)
 				queueId = append(queueId, processId)
 				queueTime = append(queueTime, processClock)
 
