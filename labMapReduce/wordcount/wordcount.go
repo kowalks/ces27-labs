@@ -1,11 +1,10 @@
 package main
 
 import (
-	//"fmt"
 	"hash/fnv"
 	"labMapReduce/mapreduce"
 
-	//"strconv"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -33,6 +32,14 @@ func mapFunc(input []byte) (result []mapreduce.KeyValue) {
 	result = make([]mapreduce.KeyValue, 0)
 
 	for _, word := range words {
+		lowerWord := strings.ToLower(word)
+
+		item := mapreduce.KeyValue{
+			Key:   lowerWord,
+			Value: "1",
+		}
+		result = append(result, item)
+
 		//COMPLETAR ESSE CÓDIGO
 		//Basta colocar em result os itens <word,"1">
 		//Lembrando: word em minúsculo!
@@ -66,9 +73,26 @@ func reduceFunc(input []mapreduce.KeyValue) (result []mapreduce.KeyValue) {
 	//	To convert int to string, use:
 	//	package strconv: func Itoa(i int) string
 
-	//COMPLETAR ESSE CÓDIGO!!!
+	var mapAux map[string]int = make(map[string]int)
 
-	//fmt.Printf("%v\n", result) //Para ajudar nos testes. Precisa da biblioteca fmt (acima comentada)
+	for _, item := range input {
+		_, ok := mapAux[item.Key]
+		if ok {
+			mapAux[item.Key]++
+		} else {
+			mapAux[item.Key] = 1
+		}
+	}
+
+	for key, value := range mapAux {
+		item := mapreduce.KeyValue{
+			Key:   key,
+			Value: strconv.Itoa(value),
+		}
+		result = append(result, item)
+	}
+
+	// fmt.Printf("%v\n", result) //Para ajudar nos testes. Precisa da biblioteca fmt (acima comentada)
 
 	return result
 }
