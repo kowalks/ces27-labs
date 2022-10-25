@@ -1,0 +1,15 @@
+{"Key":"testar","Value":"1"}
+{"Key":"a","Value":"20"}
+{"Key":"aaa","Value":"10"}
+{"Key":"aaaaaaaaa","Value":"4"}
+{"Key":"aaaa","Value":"8"}
+{"Key":"um","Value":"1"}
+{"Key":"simples","Value":"1"}
+{"Key":"o","Value":"1"}
+{"Key":"aaaaaaa","Value":"5"}
+{"Key":"aaaaaaaaaaaaaaaaaaa","Value":"2"}
+{"Key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Value":"1"}
+{"Key":"para","Value":"1"}
+{"Key":"teste","Value":"1"}
+{"Key":"programa","Value":"1"}
+{"Key":"novo","Value":"1"}

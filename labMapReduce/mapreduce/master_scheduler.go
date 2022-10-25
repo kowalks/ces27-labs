@@ -8,10 +8,6 @@ import (
 // Schedules map operations on remote workers. This will run until InputFilePathChan
 // is closed. If there is no worker available, it'll block.
 func (master *Master) schedule(task *Task, proc string, filePathChan chan string) int {
-	//////////////////////////////////
-	// YOU WANT TO MODIFY THIS CODE //
-	//////////////////////////////////
-
 	var (
 		wg        sync.WaitGroup
 		filePath  string
@@ -34,16 +30,23 @@ func (master *Master) schedule(task *Task, proc string, filePathChan chan string
 
 	wg.Wait()
 
+	// Fault tolerance
+	// The extra for loop ensures that we can handle failed operations
+	// even when the operation has already failed once
+	for len(master.failedOperationChan) > 0 {
+		operation := <-master.failedOperationChan
+		worker = <-master.idleWorkerChan
+		wg.Add(1)
+		go master.runOperation(worker, operation, &wg)
+		wg.Wait()
+	}
+
 	log.Printf("%vx %v operations completed\n", counter, proc)
 	return counter
 }
 
 // runOperation start a single operation on a RemoteWorker and wait for it to return or fail.
 func (master *Master) runOperation(remoteWorker *RemoteWorker, operation *Operation, wg *sync.WaitGroup) {
-	//////////////////////////////////
-	// YOU WANT TO MODIFY THIS CODE //
-	//////////////////////////////////
-
 	var (
 		err  error
 		args *RunArgs
@@ -53,13 +56,13 @@ func (master *Master) runOperation(remoteWorker *RemoteWorker, operation *Operat
 
 	args = &RunArgs{operation.id, operation.filePath}
 	err = remoteWorker.callRemoteWorker(operation.proc, args, new(struct{}))
-
 	if err != nil {
 		log.Printf("Operation %v '%v' Failed. Error: %v\n", operation.proc, operation.id, err)
-		wg.Done()
+		master.failedOperationChan <- operation
 		master.failedWorkerChan <- remoteWorker
+		defer wg.Done()
 	} else {
-		wg.Done()
 		master.idleWorkerChan <- remoteWorker
+		defer wg.Done()
 	}
 }
